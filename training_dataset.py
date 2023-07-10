@@ -1,11 +1,10 @@
-import pandas as pd
-from sklearn.linear_model import LogisticRegression
-
-import os
 import os.path
 import time
 
+import pandas as pd
 from joblib import dump
+from sklearn.linear_model import LogisticRegression
+
 #import joblib
 
 

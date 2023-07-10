@@ -1,12 +1,7 @@
-import matplotlib.pyplot as plt
 import pandas as pd
-import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import numpy as np
-import csv
-import datetime
-
+from plotly.subplots import make_subplots
 
 data_wlan_eth = pd.read_csv("/Users/fred/Documents/UFRN/projeto/Testes_Cenarios/Experimentos_Smart-iot/wlan0 In x Eth0 Out-data-as-seriestocolumns-2020-08-20 00_38_36.csv", sep=',', index_col=0, parse_dates=True, infer_datetime_format=True)
 data_wlan_eth = data_wlan_eth.iloc[:,0:3]

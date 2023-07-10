@@ -1,6 +1,3 @@
-import csv
-import re
-
 fi = open('/Users/fred/Downloads/censup-vinculos.txt', 'w')
 fi.write('40|1082')
 is41 = False

@@ -1,14 +1,6 @@
-import matplotlib.pyplot as plt
 import pandas as pd
-import plotly.offline as pyo
-import plotly.express as px
-from plotly.subplots import make_subplots
+import pandas as pd
 import plotly.graph_objs as go
-from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
-import cufflinks as cf
-import numpy as np
-
-
 
 data_mem_rasp4 = pd.read_csv("/Users/fred/Documents/UFRN/projeto/Testes_Cenarios/2020-08-23-AUTORAL-RASP4/Memory usage in vm-detection-data-as-seriestocolumns-2020-08-24 09 26 27.csv", sep=',', index_col=0, parse_dates=True, infer_datetime_format=True)
 data_mem_rasp3 = pd.read_csv("/Users/fred/Documents/UFRN/projeto/Testes_Cenarios/2020-08-25-AUTORAL-RASP3/Memory usage in vm-detection-data-as-seriestocolumns-2020-08-26 09 06 58.csv", sep=',', index_col=0, parse_dates=True, infer_datetime_format=True)

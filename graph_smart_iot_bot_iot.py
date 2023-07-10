@@ -1,12 +1,7 @@
-import matplotlib.pyplot as plt
 import pandas as pd
-import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import numpy as np
-import csv
-import datetime
-
+from plotly.subplots import make_subplots
 
 data_attack = pd.read_csv("/Users/fred/Documents/UFRN/projeto/Testes_Cenarios/Experimentos_dataset_iot/Alertas de ataque-data-as-seriestocolumns-2020-08-20 16_42_43.csv", sep=',', index_col=0, parse_dates=True, infer_datetime_format=True)
 data_attack = data_attack.iloc[:,0:3]

@@ -1,12 +1,5 @@
-import matplotlib.pyplot as plt
 import pandas as pd
-import plotly.express as px
-from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import numpy as np
-import csv
-import datetime
-
 
 data_cpu4 = pd.read_csv("/Users/fred/Documents/UFRN/projeto/Testes_Cenarios/2020-08-23-AUTORAL-RASP4/Uso de CPU do sensor-data-as-seriestocolumns-2020-08-24 09 26 04.csv", sep=',')
 data_cpu3 = pd.read_csv("/Users/fred/Documents/UFRN/projeto/Testes_Cenarios/2020-08-25-AUTORAL-RASP3/Uso de CPU do sensor-data-as-seriestocolumns-2020-08-26 09 06 09.csv", sep=',')

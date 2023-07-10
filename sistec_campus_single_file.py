@@ -1,5 +1,5 @@
-import os
 import csv
+import os
 
 # definindo a pasta com os arquivos CSV
 pasta_csv = "/Users/fred/Downloads/CSV"

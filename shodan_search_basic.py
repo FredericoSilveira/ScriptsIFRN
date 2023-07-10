@@ -5,8 +5,9 @@
 #
 # Author: achillean
 
-import shodan
 import sys
+
+import shodan
 
 # Configuration
 API_KEY = "stCZJCupO5DovLErnPjLe7a75hhchJPW"

@@ -1,15 +1,6 @@
 import matplotlib.pyplot as plt
 import pandas as pd
-import plotly.offline as pyo
-import plotly.express as px
-from plotly.subplots import make_subplots
 import plotly.graph_objs as go
-from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
-import cufflinks as cf
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import chart_studio.plotly as py
 
 pd.options.plotting.backend = "plotly"
 

@@ -1,10 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly as py
-import plotly.graph_objs as go
-import cufflinks as cf
-import matplotlib.pyplot as plt
-
 
 data_mem_rasp4 = pd.read_csv("/Users/fred/Downloads/memoria_rasp4_sem_docker_18_20_03_2020.csv", sep=';', index_col=0, parse_dates=True, infer_datetime_format=True)
 data_mem_rasp3 = pd.read_csv("/Users/fred/Downloads/memoria_rasp3_sem_docker_14_16_03_2020.csv", sep=';', index_col=0, parse_dates=True, infer_datetime_format=True)

@@ -1,12 +1,5 @@
-import matplotlib.pyplot as plt
 import pandas as pd
-import plotly.express as px
-from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import numpy as np
-import csv
-import datetime
-
 
 data = pd.read_csv("/Users/fred/Downloads/dados.csv", sep=';', index_col=0, parse_dates=True, infer_datetime_format=True)
 data = data.iloc[:,0:3]

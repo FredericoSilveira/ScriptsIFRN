@@ -3,14 +3,16 @@ import datetime
 import glob
 import sys
 from datetime import datetime
+# from influxdb import DataFrameClient
+from os.path import isfile
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from dateutil import tz
-#from influxdb import DataFrameClient
-from os.path import isfile
+
+
 #import seaborn
 
 
