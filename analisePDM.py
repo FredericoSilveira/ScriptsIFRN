@@ -7,7 +7,7 @@ import numpy as np
 
 # --- Configurações Iniciais ---
 BASE_PATH = "/Users/fred/Downloads"  # ATENÇÃO: Confirme se este é o caminho correto
-OUTPUT_GRAPH_PATH = os.path.join(BASE_PATH, "graficos_analise_institucional_v7.13_Indentation_Fix")
+OUTPUT_GRAPH_PATH = os.path.join(BASE_PATH, "graficos_analise_institucional_v7.18_Correcoes_Plotagem")
 
 # Criar diretório para gráficos se não existir
 if not os.path.exists(OUTPUT_GRAPH_PATH):
@@ -30,7 +30,7 @@ CAMPUS_REGIAO_MAP = {
     'Central Potiguar': ['LAJ', 'MC']
 }
 
-# --- Nomes das Colunas (AJUSTADOS CONFORME ÚLTIMA INFORMAÇÃO DO USUÁRIO) ---
+# --- Nomes das Colunas ---
 COL_ANO_INGRESSO = "Ano de Ingresso"
 COL_ANO_CONCLUSAO = "Ano de Conclusão"
 COL_ANO_PERIODO_REF = "Ano Letivo"
@@ -48,6 +48,7 @@ VALOR_REPROVADO = "Reprovado"
 VALOR_DEPENDENCIA = "Dependência"
 VALOR_APROVADO = "Aprovado no período"
 VALOR_PDM_ELEGIVEL = "Elegível"
+VALORES_EVASAO_ETC = ["Evasão", "Jubilado", "Cancelamento Compulsório", "Cancelada", "Cancelamento por Desligamento"]
 
 
 # --- Funções Auxiliares ---
@@ -66,6 +67,7 @@ def format_consolidado_frequency(freq_series):
 
 
 def processar_dados_consolidados(filepath, modalidade_nome):
+    # ... (código mantido como na v7.17, com .copy() para evitar warnings) ...
     print(f"\nProcessando arquivo consolidado: {filepath} para Modalidade: {modalidade_nome}")
     try:
         df = pd.read_excel(filepath)
@@ -82,7 +84,12 @@ def processar_dados_consolidados(filepath, modalidade_nome):
             df[col] = np.nan
 
     if COL_CPF_CONSOLIDADO in df.columns and df[COL_CPF_CONSOLIDADO].notna().any():
-        df[COL_CPF_CONSOLIDADO] = clean_cpf(df[COL_CPF_CONSOLIDADO])
+        df['CPF_original_str'] = df[COL_CPF_CONSOLIDADO].astype(str)  # Mantém original para exportação
+        df[COL_CPF_CONSOLIDADO] = clean_cpf(df[COL_CPF_CONSOLIDADO])  # Usa o limpo para merge
+    else:
+        df['CPF_original_str'] = np.nan
+        df[COL_CPF_CONSOLIDADO] = np.nan
+
     if COL_CAMPUS in df.columns:
         df[COL_CAMPUS] = df[COL_CAMPUS].fillna('N/A')
 
@@ -91,6 +98,14 @@ def processar_dados_consolidados(filepath, modalidade_nome):
     else:
         df['FrequenciaAluno'] = np.nan
 
+    # Adiciona a modalidade baseada no arquivo para o DataFrame que será retornado
+    df['Modalidade'] = modalidade_nome
+    if 'Modalidade' in df.columns and 'Modalidade_original' not in df.columns:  # Se já existe uma coluna "Modalidade"
+        df.rename(columns={'Modalidade': 'Modalidade_original'}, inplace=True)
+        df['Modalidade'] = modalidade_nome  # Garante que 'Modalidade' seja a processada
+    elif 'Modalidade_original' not in df.columns:  # Se não existe nem 'Modalidade' nem 'Modalidade_original'
+        df['Modalidade_original'] = modalidade_nome
+
     all_dfs_agg = []
 
     if COL_ANO_INGRESSO in df.columns and df[COL_ANO_INGRESSO].notna().any() and \
@@ -98,11 +113,9 @@ def processar_dados_consolidados(filepath, modalidade_nome):
         df_matriculados = df.copy()
         df_matriculados['Ano'] = to_numeric_silent(df_matriculados[COL_ANO_INGRESSO])
         df_matriculados.dropna(subset=['Ano', COL_CPF_CONSOLIDADO], inplace=True)
-
         if not df_matriculados.empty:
             df_matriculados['Ano'] = df_matriculados['Ano'].astype(int)
             df_matriculados = df_matriculados[(df_matriculados['Ano'] >= 2018) & (df_matriculados['Ano'] <= 2024)]
-
             if not df_matriculados.empty:
                 matriculados_agg = df_matriculados.drop_duplicates(subset=['Ano', COL_CPF_CONSOLIDADO]) \
                     .groupby(['Ano', COL_CAMPUS]).size().reset_index(name='Count')
@@ -123,87 +136,107 @@ def processar_dados_consolidados(filepath, modalidade_nome):
                 concluidos_agg['TipoIndicador'] = 'Concluído'
                 all_dfs_agg.append(concluidos_agg)
 
-    df_desempenho_individual_todos_anos = pd.DataFrame()
+    df_desempenho_individual_todos_anos = df.copy()  # Começa com todos os dados e colunas originais
+    # Renomeia CPF_CONSOLIDADO para CPF para consistência no df_desempenho_individual_todos_anos
+    if COL_CPF_CONSOLIDADO in df_desempenho_individual_todos_anos.columns:
+        df_desempenho_individual_todos_anos.rename(columns={COL_CPF_CONSOLIDADO: 'CPF'}, inplace=True)
 
+    # Adiciona/assegura colunas de Ano e Periodo numéricos para df_desempenho_individual_todos_anos
+    if COL_ANO_PERIODO_REF in df_desempenho_individual_todos_anos.columns:
+        df_desempenho_individual_todos_anos['Ano'] = to_numeric_silent(
+            df_desempenho_individual_todos_anos[COL_ANO_PERIODO_REF])
+    else:
+        df_desempenho_individual_todos_anos['Ano'] = np.nan
+
+    if COL_PERIODO_REF in df_desempenho_individual_todos_anos.columns:
+        df_desempenho_individual_todos_anos['Periodo'] = to_numeric_silent(
+            df_desempenho_individual_todos_anos[COL_PERIODO_REF])
+    else:
+        df_desempenho_individual_todos_anos['Periodo'] = np.nan
+
+    if 'AnoConclusao' not in df_desempenho_individual_todos_anos.columns and COL_ANO_CONCLUSAO in df_desempenho_individual_todos_anos.columns:
+        df_desempenho_individual_todos_anos['AnoConclusao'] = to_numeric_silent(
+            df_desempenho_individual_todos_anos[COL_ANO_CONCLUSAO])
+    elif 'AnoConclusao' not in df_desempenho_individual_todos_anos.columns:
+        df_desempenho_individual_todos_anos['AnoConclusao'] = np.nan
+
+    # Filtra df_desempenho_individual_todos_anos para o período correto ANTES de retornar
+    if modalidade_nome == "Técnico Integrado" and 'Periodo' in df_desempenho_individual_todos_anos.columns:
+        df_desempenho_individual_todos_anos = df_desempenho_individual_todos_anos[
+            df_desempenho_individual_todos_anos['Periodo'] == 1
+            ].copy()
+
+    # Filtra por ano (2018-2024) para df_desempenho_individual_todos_anos
+    if 'Ano' in df_desempenho_individual_todos_anos.columns:
+        df_desempenho_individual_todos_anos = df_desempenho_individual_todos_anos[
+            (df_desempenho_individual_todos_anos['Ano'] >= 2018) & (df_desempenho_individual_todos_anos['Ano'] <= 2024)
+            ].copy()
+
+    # Processamento para gráficos históricos de Reprovado, Dependência, Evasão
+    # (usa o df original, já que df_desempenho_individual_todos_anos foi modificado)
     if COL_ANO_PERIODO_REF in df.columns and df[COL_ANO_PERIODO_REF].notna().any() and \
             COL_PERIODO_REF in df.columns and df[COL_PERIODO_REF].notna().any() and \
-            COL_CPF_CONSOLIDADO in df.columns and df[COL_CPF_CONSOLIDADO].notna().any() and \
+            'CPF' in df_desempenho_individual_todos_anos.columns and \
             COL_SITUACAO_PERIODO in df.columns and df[COL_SITUACAO_PERIODO].notna().any():
 
-        temp_df_periodo = df.copy()
-        temp_df_periodo['AnoRef'] = to_numeric_silent(temp_df_periodo[COL_ANO_PERIODO_REF])
-        temp_df_periodo['PeriodoRef'] = to_numeric_silent(temp_df_periodo[COL_PERIODO_REF])
-        temp_df_periodo['AnoConclusaoNum'] = to_numeric_silent(temp_df_periodo[COL_ANO_CONCLUSAO])
-        temp_df_periodo.dropna(subset=['AnoRef', 'PeriodoRef', COL_CPF_CONSOLIDADO], inplace=True)
-
-        if not temp_df_periodo.empty:
-            temp_df_periodo['AnoRef'] = temp_df_periodo['AnoRef'].astype(int)
-            temp_df_periodo['PeriodoRef'] = temp_df_periodo['PeriodoRef'].astype(int)
-
-            df_desempenho_ind = temp_df_periodo[
-                (temp_df_periodo['AnoRef'] >= 2018) & (temp_df_periodo['AnoRef'] <= 2024)].copy()
-
-            if modalidade_nome == "Técnico Integrado":
-                df_desempenho_ind = df_desempenho_ind[df_desempenho_ind['PeriodoRef'] == 1].copy()
-
-            cols_desempenho = [COL_CPF_CONSOLIDADO, 'AnoRef', 'PeriodoRef', COL_CAMPUS,
-                               COL_SITUACAO_PERIODO, 'AnoConclusaoNum', 'FrequenciaAluno']
-            cols_desempenho_existentes = [col for col in cols_desempenho if col in df_desempenho_ind.columns]
-
-            if not df_desempenho_ind.empty and set(cols_desempenho_existentes).issuperset(set(cols_desempenho)):
-                df_desempenho_individual_todos_anos = df_desempenho_ind[cols_desempenho_existentes].copy()
-                df_desempenho_individual_todos_anos.rename(columns={
-                    COL_CAMPUS: 'Campus', COL_CPF_CONSOLIDADO: 'CPF',
-                    'AnoRef': 'Ano', 'PeriodoRef': 'Periodo',
-                    'AnoConclusaoNum': 'AnoConclusao'
-                }, inplace=True)
-                df_desempenho_individual_todos_anos['Modalidade'] = modalidade_nome
-            else:
-                df_desempenho_individual_todos_anos = pd.DataFrame(
-                    columns=['CPF', 'Ano', 'Periodo', 'Campus', COL_SITUACAO_PERIODO, 'AnoConclusao', 'FrequenciaAluno',
-                             'Modalidade'])
-
-        df_reprovados_hist = df[df[COL_SITUACAO_PERIODO] == VALOR_REPROVADO].copy()
-        if not df_reprovados_hist.empty:
-            df_reprovados_hist['Ano'] = to_numeric_silent(df_reprovados_hist[COL_ANO_PERIODO_REF])
-            df_reprovados_hist['Periodo'] = to_numeric_silent(df_reprovados_hist[COL_PERIODO_REF])
-            df_reprovados_hist.dropna(subset=['Ano', 'Periodo'], inplace=True)
-            if not df_reprovados_hist.empty:
-                df_reprovados_hist['Ano'] = df_reprovados_hist['Ano'].astype(int)
-                df_reprovados_hist['Periodo'] = df_reprovados_hist['Periodo'].astype(int)
-                df_reprovados_hist = df_reprovados_hist[
-                    (df_reprovados_hist['Ano'] >= 2018) & (df_reprovados_hist['Ano'] <= 2024)]
+        # Histórico de Reprovados
+        df_reprovados_hist_calc = df[df[COL_SITUACAO_PERIODO] == VALOR_REPROVADO].copy()
+        if not df_reprovados_hist_calc.empty:
+            df_reprovados_hist_calc['Ano'] = to_numeric_silent(df_reprovados_hist_calc[COL_ANO_PERIODO_REF])
+            df_reprovados_hist_calc['Periodo'] = to_numeric_silent(df_reprovados_hist_calc[COL_PERIODO_REF])
+            df_reprovados_hist_calc.dropna(subset=['Ano', 'Periodo', 'CPF'], inplace=True)
+            if not df_reprovados_hist_calc.empty:
+                df_reprovados_hist_calc['Ano'] = df_reprovados_hist_calc['Ano'].astype(int)
+                df_reprovados_hist_calc['Periodo'] = df_reprovados_hist_calc['Periodo'].astype(int)
+                df_reprovados_hist_calc = df_reprovados_hist_calc[
+                    (df_reprovados_hist_calc['Ano'] >= 2018) & (df_reprovados_hist_calc['Ano'] <= 2024)]
                 if modalidade_nome == "Técnico Integrado":
-                    df_reprovados_hist = df_reprovados_hist[df_reprovados_hist['Periodo'] == 1].copy()
-                if not df_reprovados_hist.empty:
-                    reprovados_agg_hist = df_reprovados_hist.groupby(['Ano', 'Periodo', COL_CAMPUS]).size().reset_index(
-                        name='Count')
+                    df_reprovados_hist_calc = df_reprovados_hist_calc[df_reprovados_hist_calc['Periodo'] == 1].copy()
+                if not df_reprovados_hist_calc.empty:
+                    reprovados_agg_hist = df_reprovados_hist_calc.drop_duplicates(subset=['Ano', 'Periodo', 'CPF']) \
+                        .groupby(['Ano', 'Periodo', COL_CAMPUS]).size().reset_index(name='Count')
                     reprovados_agg_hist['TipoIndicador'] = 'Reprovado'
                     all_dfs_agg.append(reprovados_agg_hist)
 
-        df_dependencia_hist = df[df[COL_SITUACAO_PERIODO] == VALOR_DEPENDENCIA].copy()
-        if not df_dependencia_hist.empty:
-            df_dependencia_hist['Ano'] = to_numeric_silent(df_dependencia_hist[COL_ANO_PERIODO_REF])
-            df_dependencia_hist['Periodo'] = to_numeric_silent(df_dependencia_hist[COL_PERIODO_REF])
-            df_dependencia_hist.dropna(subset=['Ano', 'Periodo'], inplace=True)
-            if not df_dependencia_hist.empty:
-                df_dependencia_hist['Ano'] = df_dependencia_hist['Ano'].astype(int)
-                df_dependencia_hist['Periodo'] = df_dependencia_hist['Periodo'].astype(int)
-                df_dependencia_hist = df_dependencia_hist[
-                    (df_dependencia_hist['Ano'] >= 2018) & (df_dependencia_hist['Ano'] <= 2024)]
+        # Histórico de Dependência
+        df_dependencia_hist_calc = df[df[COL_SITUACAO_PERIODO] == VALOR_DEPENDENCIA].copy()
+        if not df_dependencia_hist_calc.empty:
+            df_dependencia_hist_calc['Ano'] = to_numeric_silent(df_dependencia_hist_calc[COL_ANO_PERIODO_REF])
+            df_dependencia_hist_calc['Periodo'] = to_numeric_silent(df_dependencia_hist_calc[COL_PERIODO_REF])
+            df_dependencia_hist_calc.dropna(subset=['Ano', 'Periodo', 'CPF'], inplace=True)
+            if not df_dependencia_hist_calc.empty:
+                df_dependencia_hist_calc['Ano'] = df_dependencia_hist_calc['Ano'].astype(int)
+                df_dependencia_hist_calc['Periodo'] = df_dependencia_hist_calc['Periodo'].astype(int)
+                df_dependencia_hist_calc = df_dependencia_hist_calc[
+                    (df_dependencia_hist_calc['Ano'] >= 2018) & (df_dependencia_hist_calc['Ano'] <= 2024)]
                 if modalidade_nome == "Técnico Integrado":
-                    df_dependencia_hist = df_dependencia_hist[df_dependencia_hist['Periodo'] == 1].copy()
-                if not df_dependencia_hist.empty:
-                    dependencia_agg_hist = df_dependencia_hist.groupby(
-                        ['Ano', 'Periodo', COL_CAMPUS]).size().reset_index(name='Count')
+                    df_dependencia_hist_calc = df_dependencia_hist_calc[df_dependencia_hist_calc['Periodo'] == 1].copy()
+                if not df_dependencia_hist_calc.empty:
+                    dependencia_agg_hist = df_dependencia_hist_calc.drop_duplicates(subset=['Ano', 'Periodo', 'CPF']) \
+                        .groupby(['Ano', 'Periodo', COL_CAMPUS]).size().reset_index(name='Count')
                     dependencia_agg_hist['TipoIndicador'] = 'Dependência'
                     all_dfs_agg.append(dependencia_agg_hist)
-    else:
-        print(
-            f"AVISO: Colunas essenciais para indicadores de período não encontradas ou vazias em {filepath}. Análise de período e PDM comprometida.")
-        df_desempenho_individual_todos_anos = pd.DataFrame(
-            columns=['CPF', 'Ano', 'Periodo', 'Campus', COL_SITUACAO_PERIODO, 'AnoConclusao', 'FrequenciaAluno',
-                     'Modalidade'])
+
+        # Histórico de Evasão/Desligamento
+        df_evasao_etc_hist_calc = df[df[COL_SITUACAO_PERIODO].isin(VALORES_EVASAO_ETC)].copy()
+        if not df_evasao_etc_hist_calc.empty and COL_ANO_PERIODO_REF in df_evasao_etc_hist_calc.columns and \
+                COL_PERIODO_REF in df_evasao_etc_hist_calc.columns and 'CPF' in df_evasao_etc_hist_calc.columns:  # CPF já é o limpo
+            df_evasao_etc_hist_calc['Ano'] = to_numeric_silent(df_evasao_etc_hist_calc[COL_ANO_PERIODO_REF])
+            df_evasao_etc_hist_calc['Periodo'] = to_numeric_silent(df_evasao_etc_hist_calc[COL_PERIODO_REF])
+            df_evasao_etc_hist_calc.dropna(subset=['Ano', 'Periodo', 'CPF'], inplace=True)
+            if not df_evasao_etc_hist_calc.empty:
+                df_evasao_etc_hist_calc['Ano'] = df_evasao_etc_hist_calc['Ano'].astype(int)
+                df_evasao_etc_hist_calc['Periodo'] = df_evasao_etc_hist_calc['Periodo'].astype(int)
+                df_evasao_etc_hist_calc = df_evasao_etc_hist_calc[
+                    (df_evasao_etc_hist_calc['Ano'] >= 2018) & (df_evasao_etc_hist_calc['Ano'] <= 2024)]
+                if modalidade_nome == "Técnico Integrado":
+                    df_evasao_etc_hist_calc = df_evasao_etc_hist_calc[df_evasao_etc_hist_calc['Periodo'] == 1].copy()
+
+                if not df_evasao_etc_hist_calc.empty:
+                    evasao_agg_hist = df_evasao_etc_hist_calc.drop_duplicates(subset=['Ano', 'Periodo', 'CPF']) \
+                        .groupby(['Ano', 'Periodo', COL_CAMPUS]).size().reset_index(name='Count')
+                    evasao_agg_hist['TipoIndicador'] = 'Evasão/Desligamento'
+                    all_dfs_agg.append(evasao_agg_hist)
 
     if not all_dfs_agg:
         df_historico_agregado = pd.DataFrame()
@@ -217,6 +250,7 @@ def processar_dados_consolidados(filepath, modalidade_nome):
 
 
 def carregar_dados_pdm(filepath_pdm, modalidade_nome):
+    # ... (código mantido como na v7.12) ...
     print(f"Carregando dados PDM: {filepath_pdm}")
     try:
         df_pdm = pd.read_csv(filepath_pdm, usecols=[COL_CPF_PDM, COL_SITUACAO_PDM], sep=';')
@@ -257,10 +291,9 @@ df_pdm_todos = pd.concat([df_pdm_emr_proc, df_pdm_eja_proc], ignore_index=True)
 if not df_pdm_todos.empty:
     df_pdm_todos.drop_duplicates(subset=['CPF', 'Modalidade'], inplace=True)
 
-# Combinar dados de desempenho individual (todos os anos) com PDM
 df_desempenho_completo_pdm = pd.DataFrame(
     columns=['CPF', 'Ano', 'Periodo', 'Campus', COL_SITUACAO_PERIODO, 'AnoConclusao', 'FrequenciaAluno', 'Modalidade',
-             'StatusPDM'])  # Inicializa com colunas
+             'StatusPDM'])
 if not df_todo_desempenho_individual.empty and 'CPF' in df_todo_desempenho_individual.columns and \
         not df_pdm_todos.empty and 'CPF' in df_pdm_todos.columns and 'Modalidade' in df_todo_desempenho_individual.columns:
     df_desempenho_completo_pdm = pd.merge(df_todo_desempenho_individual, df_pdm_todos, on=['CPF', 'Modalidade'],
@@ -274,17 +307,16 @@ if not df_todo_desempenho_individual.empty and 'CPF' in df_todo_desempenho_indiv
 else:
     print("\nAVISO: Não foi possível combinar dados de desempenho individual com PDM.")
 
+
 # --- Funções de Plotagem (Histórico) ---
-sns.set_theme(style="whitegrid")
-
-
+# ... (plot_evolucao_geral e plot_evolucao_regional mantidas como na v7.12) ...
 def plot_evolucao_geral(df_total, modalidade_sel, tipo_indicador_sel, output_path):
     if df_total.empty: return
     df_plot = df_total[
         (df_total['Modalidade'] == modalidade_sel) & (df_total['TipoIndicador'] == tipo_indicador_sel)].copy()
     if df_plot.empty: return
 
-    if tipo_indicador_sel in ['Reprovado', 'Dependência']:
+    if tipo_indicador_sel in ['Reprovado', 'Dependência', 'Evasão/Desligamento']:
         if 'Periodo' not in df_plot.columns or 'Ano' not in df_plot.columns: return
         df_plot['AnoPeriodo'] = df_plot['Ano'].astype(str) + "." + df_plot['Periodo'].astype(str)
         df_agg = df_plot.groupby('AnoPeriodo')['Count'].sum().reset_index()
@@ -294,12 +326,12 @@ def plot_evolucao_geral(df_total, modalidade_sel, tipo_indicador_sel, output_pat
             df_agg = df_agg.sort_values('AnoNumeric').drop(columns=['AnoNumeric'])
         except ValueError:
             df_agg = df_agg.sort_values('AnoPeriodo')
-        x_axis, x_label, title_suffix = 'AnoPeriodo', 'Ano e Período Letivo', f"{tipo_indicador_sel}s por Período"
+        x_axis, x_label, title_suffix = 'AnoPeriodo', 'Ano e Período Letivo', f"{tipo_indicador_sel} por Período"
     else:
         if 'Ano' not in df_plot.columns: return
         df_agg = df_plot.groupby('Ano')['Count'].sum().reset_index().sort_values('Ano')
         if df_agg.empty: return
-        x_axis, x_label, title_suffix = 'Ano', 'Ano', f"{tipo_indicador_sel}s por Ano"
+        x_axis, x_label, title_suffix = 'Ano', 'Ano', f"{tipo_indicador_sel} por Ano"
 
     plt.figure(figsize=(12, 7))
     ax = sns.lineplot(data=df_agg, x=x_axis, y='Count', marker='o', linewidth=2.5, markersize=8, legend=False,
@@ -324,7 +356,7 @@ def plot_evolucao_geral(df_total, modalidade_sel, tipo_indicador_sel, output_pat
     plt.grid(True, linestyle='--', alpha=0.6, axis='y');
     plt.tight_layout()
     filename = os.path.join(output_path,
-                            f"HIST_evolucao_geral_{tipo_indicador_sel.lower()}_{modalidade_sel.lower().replace(' ', '_')}.png")
+                            f"HIST_evolucao_geral_{tipo_indicador_sel.lower().replace('/', '_')}_{modalidade_sel.lower().replace(' ', '_')}.png")
     plt.savefig(filename);
     plt.close();
     print(f"Gráfico salvo: {filename}")
@@ -337,7 +369,7 @@ def plot_evolucao_regional(df_total, modalidade_sel, tipo_indicador_sel, regiao_
             df_total['Campus'].isin(campi_da_regiao))].copy()
     if df_plot_campuses.empty: return
 
-    if tipo_indicador_sel in ['Reprovado', 'Dependência']:
+    if tipo_indicador_sel in ['Reprovado', 'Dependência', 'Evasão/Desligamento']:
         if 'Periodo' not in df_plot_campuses.columns or 'Ano' not in df_plot_campuses.columns: return
         df_plot_campuses['AnoPeriodo'] = df_plot_campuses['Ano'].astype(str) + "." + df_plot_campuses['Periodo'].astype(
             str)
@@ -348,13 +380,13 @@ def plot_evolucao_regional(df_total, modalidade_sel, tipo_indicador_sel, regiao_
             df_pivot = df_pivot.sort_values('AnoNumeric').drop(columns=['AnoNumeric'])
         except ValueError:
             df_pivot = df_pivot.sort_index()
-        x_axis_col, x_label, title_suffix = df_pivot.index, 'Ano e Período Letivo', f"{tipo_indicador_sel}s por Período"
+        x_axis_col, x_label, title_suffix = df_pivot.index, 'Ano e Período Letivo', f"{tipo_indicador_sel} por Período"
     else:
         if 'Ano' not in df_plot_campuses.columns: return
         df_pivot = df_plot_campuses.groupby(['Ano', 'Campus'])['Count'].sum().unstack(fill_value=0)
         if df_pivot.empty: return
         df_pivot = df_pivot.sort_index()
-        x_axis_col, x_label, title_suffix = df_pivot.index, 'Ano', f"{tipo_indicador_sel}s por Ano"
+        x_axis_col, x_label, title_suffix = df_pivot.index, 'Ano', f"{tipo_indicador_sel} por Ano"
 
     for campus_reg in campi_da_regiao:
         if campus_reg not in df_pivot.columns: df_pivot[campus_reg] = 0
@@ -388,7 +420,7 @@ def plot_evolucao_regional(df_total, modalidade_sel, tipo_indicador_sel, regiao_
                                           fontsize=9, title_fontsize=10)
     plt.grid(True, linestyle='--', alpha=0.6, axis='y');
     plt.tight_layout(rect=[0, 0, 0.88, 1])
-    filename_suffix = tipo_indicador_sel.lower().replace(' ', '_').replace('/', '_')
+    filename_suffix = tipo_indicador_sel.lower().replace('/', '_').replace(' ', '_')
     regiao_filename = regiao_nome.lower().replace(' ', '_').replace('ã', 'a').replace('é', 'e')
     filename = os.path.join(output_path,
                             f"HIST_evolucao_regional_{regiao_filename}_{filename_suffix}_{modalidade_sel.lower().replace(' ', '_')}.png")
@@ -399,11 +431,11 @@ def plot_evolucao_regional(df_total, modalidade_sel, tipo_indicador_sel, regiao_
 
 # --- Funções de Plotagem (Análise PDM) ---
 def plot_pdm_comparativo_anual(df_agg_pdm, modalidade_sel, metrica_nome, y_label, is_rate, output_path, x_col='Ano',
-                               x_label_text='Ano'):
+                               x_label_text='Ano', numerator_col_map=None):
     if df_agg_pdm.empty: return
     df_plot = df_agg_pdm[
         (df_agg_pdm['Modalidade'] == modalidade_sel) &
-        (df_agg_pdm['StatusPDM'].isin(['Elegível PDM', 'Não Elegível PDM']))
+        (df_agg_pdm['StatusPDM'].isin(['Elegível PDM', 'Não Elegível PDM', 'Sem Info PDM']))
         ].copy()
 
     if df_plot.empty or metrica_nome not in df_plot.columns:
@@ -414,15 +446,69 @@ def plot_pdm_comparativo_anual(df_agg_pdm, modalidade_sel, metrica_nome, y_label
     if df_plot.empty: return
 
     plt.figure(figsize=(12, 7))
-    custom_palette = {"Elegível PDM": "cornflowerblue", "Não Elegível PDM": "lightskyblue"}
-    ax = sns.barplot(data=df_plot, x=x_col, y=metrica_nome, hue='StatusPDM', palette=custom_palette, width=0.8)
+    custom_palette = {"Elegível PDM": "cornflowerblue", "Não Elegível PDM": "lightskyblue", "Sem Info PDM": "lightgrey"}
 
-    for p in ax.patches:
-        height = p.get_height()
-        if pd.notna(height) and height > 0:
-            label_text = f'{height:.0f}' if not is_rate else f'{height:.1f}%'
-            ax.text(p.get_x() + p.get_width() / 2., height + (plt.gca().get_ylim()[1] * 0.01), label_text,
-                    ha='center', va='bottom', fontsize=9, color='black', weight='medium')
+    hue_order = [h for h in ['Elegível PDM', 'Não Elegível PDM', 'Sem Info PDM'] if h in df_plot['StatusPDM'].unique()]
+
+    ax = sns.barplot(data=df_plot, x=x_col, y=metrica_nome, hue='StatusPDM', palette=custom_palette, width=0.9,
+                     hue_order=hue_order)
+
+    # Refined annotation logic using ax.containers
+    if hasattr(ax, 'containers') and ax.containers:
+        for i, container in enumerate(ax.containers):  # Each container is for one hue level
+            if i < len(hue_order):
+                current_hue_value = hue_order[i]
+                for p_idx, p in enumerate(container.patches):
+                    height = p.get_height()
+
+                    # Get the x_category value for the current patch
+                    # Patches in a container are ordered by x-axis categories
+                    if p_idx < len(df_plot[x_col].unique()):
+                        current_x_value_for_patch = df_plot[x_col].unique()[p_idx]
+
+                        data_row_df = df_plot[
+                            (df_plot[x_col] == current_x_value_for_patch) &
+                            (df_plot['StatusPDM'] == current_hue_value)
+                            ]
+
+                        if not data_row_df.empty:
+                            data_row = data_row_df.iloc[0]
+                            metric_val = data_row[metrica_nome]
+
+                            label_metric = f'{metric_val:.0f}' if not is_rate else f'{metric_val:.1f}%'
+                            label_n = ""
+
+                            if is_rate and numerator_col_map and metrica_nome in numerator_col_map:
+                                num_col = numerator_col_map[metrica_nome]
+                                if num_col in data_row and pd.notna(data_row[num_col]):
+                                    label_n = f'(N={int(data_row[num_col])})'
+                            elif not is_rate and metrica_nome == 'N_Concluidos':  # N_Concluidos is already the N
+                                pass
+                            elif not is_rate and numerator_col_map and metrica_nome in numerator_col_map:  # For other counts like N_Alunos_Freq
+                                num_col = numerator_col_map[metrica_nome]
+                                if num_col in data_row and pd.notna(data_row[num_col]):
+                                    label_n = f'(N={int(data_row[num_col])})'
+
+                            full_label = label_metric
+                            if label_n:
+                                full_label += f"\n{label_n}"
+
+                            if pd.notna(height) and (
+                                    height > 0 or not is_rate or (is_rate and abs(height) < 0.001 and height == 0)):
+                                if is_rate and abs(height) < 0.01 and height != 0 and not (
+                                        abs(height) < 0.001 and height == 0): continue
+                                if not is_rate and int(height) == 0 and height != 0: continue
+
+                                ax.text(p.get_x() + p.get_width() / 2., height, full_label,
+                                        ha='center', va='bottom', fontsize=8, color='black', weight='medium',
+                                        linespacing=1.3)
+                    else:
+                        print(
+                            f"WARN: Patch index {p_idx} out of bounds for x_col unique values in container for hue {current_hue_value}")
+            else:
+                print(f"WARN: Container index {i} out of bounds for hue_order.")
+    else:
+        print("WARN: ax.containers not found or empty, skipping PDM bar annotations with N.")
 
     ax.spines['top'].set_visible(False);
     ax.spines['right'].set_visible(False)
@@ -441,16 +527,21 @@ def plot_pdm_comparativo_anual(df_agg_pdm, modalidade_sel, metrica_nome, y_label
     if is_rate:
         current_max_y = df_plot[metrica_nome].max() if not df_plot[metrica_nome].empty and df_plot[
             metrica_nome].notna().any() else 0
-        plt.ylim(0, max(100, current_max_y * 1.15 if pd.notna(current_max_y) else 100))
+        plt.ylim(0, max(100, current_max_y * 1.20 if pd.notna(current_max_y) else 100))
+    else:
+        current_max_y = df_plot[metrica_nome].max() if not df_plot[metrica_nome].empty and df_plot[
+            metrica_nome].notna().any() else 0
+        plt.ylim(0, current_max_y * 1.20 if pd.notna(current_max_y) else 10)
 
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(handles=handles, labels=labels, title='Status PDM (2024)', loc='upper center',
-              bbox_to_anchor=(0.5, -0.15 if "Período" not in x_label_text else -0.25), ncol=2, frameon=False)
+              bbox_to_anchor=(0.5, -0.15 if "Período" not in x_label_text else -0.25), ncol=len(hue_order),
+              frameon=False)
 
     plt.grid(False);
     plt.tight_layout(rect=[0, 0.05, 1, 0.95])
     filename = os.path.join(output_path,
-                            f"PDM_{metrica_nome.lower()}_anual_comparativa_{modalidade_sel.lower().replace(' ', '_')}.png")
+                            f"PDM_{metrica_nome.lower().replace('/', '_')}_anual_comparativa_{modalidade_sel.lower().replace(' ', '_')}.png")
     plt.savefig(filename);
     plt.close();
     print(f"Gráfico salvo: {filename}")
@@ -462,6 +553,14 @@ df_pdm_concluidos_anual_agg = pd.DataFrame()
 df_pdm_reprovacao_anual_periodo_agg = pd.DataFrame()
 df_pdm_dependencia_anual_periodo_agg = pd.DataFrame()
 df_pdm_media_freq_anual_agg = pd.DataFrame()
+df_pdm_evasao_anual_periodo_agg = pd.DataFrame()
+
+METRICA_TO_NUMERADOR_MAP = {
+    'MediaFrequencia': 'N_Alunos_Freq',
+    'TaxaReprovacao': 'N_Reprovados',
+    'TaxaDependencia': 'N_Dependencia',
+    'TaxaEvasaoDesligamento': 'N_EvasaoDesligamento'
+}
 
 if not df_desempenho_completo_pdm.empty:
     print("\nCalculando indicadores anuais (2018-2024) por Status PDM...")
@@ -470,22 +569,21 @@ if not df_desempenho_completo_pdm.empty:
         'AnoConclusao'].notna().any():
         df_concl_pdm = df_desempenho_completo_pdm.dropna(subset=['AnoConclusao', 'CPF']).copy()
         if not df_concl_pdm.empty:
-            # A conversão para int e o filtro de ano já devem ter sido feitos em processar_dados_consolidados
-            # Mas, para garantir, podemos re-aplicar se necessário, ou confiar que df_desempenho_completo_pdm já está correto.
-            # A coluna 'AnoConclusao' em df_desempenho_completo_pdm é o 'AnoConclusaoNum' original.
-            # A coluna 'Ano' em df_desempenho_completo_pdm é o 'AnoRef' (Ano Letivo de Referência).
-            # Para concluídos, precisamos agrupar pelo ano em que a conclusão ocorreu.
-            df_pdm_concluidos_anual_agg = df_concl_pdm[df_concl_pdm['AnoConclusao'].notna()] \
-                .drop_duplicates(subset=['AnoConclusao', 'CPF', 'StatusPDM', 'Modalidade']) \
-                .groupby([df_concl_pdm['AnoConclusao'].astype(int), 'Modalidade', 'StatusPDM']) \
-                .size().reset_index(name='N_Concluidos')
-            df_pdm_concluidos_anual_agg.rename(columns={'AnoConclusao': 'Ano'}, inplace=True)
+            # Correção do SettingWithCopyWarning
+            df_concl_pdm.loc[:, 'AnoConclusao'] = df_concl_pdm['AnoConclusao'].astype(int)
+            df_concl_pdm_filtered = df_concl_pdm[
+                (df_concl_pdm['AnoConclusao'] >= 2018) & (df_concl_pdm['AnoConclusao'] <= 2024)]
+            if not df_concl_pdm_filtered.empty:
+                df_pdm_concluidos_anual_agg = df_concl_pdm_filtered.drop_duplicates(
+                    subset=['AnoConclusao', 'CPF', 'StatusPDM', 'Modalidade']) \
+                    .groupby(['AnoConclusao', 'Modalidade', 'StatusPDM']) \
+                    .size().reset_index(name='N_Concluidos')
+                df_pdm_concluidos_anual_agg.rename(columns={'AnoConclusao': 'Ano'}, inplace=True)
 
-    if COL_SITUACAO_PERIODO in df_desempenho_completo_pdm.columns and \
-            'Ano' in df_desempenho_completo_pdm.columns and 'Periodo' in df_desempenho_completo_pdm.columns:
+    if ('Ano' in df_desempenho_completo_pdm.columns and 'Periodo' in df_desempenho_completo_pdm.columns and \
+            COL_SITUACAO_PERIODO in df_desempenho_completo_pdm.columns):
 
-        df_total_situacao_periodo = df_desempenho_completo_pdm.dropna(
-            subset=['CPF', 'Ano', 'Periodo', COL_SITUACAO_PERIODO]) \
+        df_total_situacao_periodo = df_desempenho_completo_pdm.dropna(subset=['CPF', 'Ano', 'Periodo']) \
             .drop_duplicates(subset=['CPF', 'Ano', 'Periodo', 'Modalidade', 'StatusPDM']) \
             .groupby(['Ano', 'Periodo', 'Modalidade', 'StatusPDM']) \
             .size().reset_index(name='TotalAlunosPeriodo')
@@ -504,24 +602,33 @@ if not df_desempenho_completo_pdm.empty:
             .groupby(['Ano', 'Periodo', 'Modalidade', 'StatusPDM']) \
             .size().reset_index(name='N_Dependencia')
 
-        if not df_total_situacao_periodo.empty:
-            df_pdm_reprovacao_anual_periodo_agg = pd.merge(df_total_situacao_periodo, df_reprov_pdm_periodo,
-                                                           on=['Ano', 'Periodo', 'Modalidade', 'StatusPDM'],
-                                                           how='left').fillna(0)
-            if 'N_Reprovados' not in df_pdm_reprovacao_anual_periodo_agg.columns: df_pdm_reprovacao_anual_periodo_agg[
-                'N_Reprovados'] = 0
-            df_pdm_reprovacao_anual_periodo_agg['TaxaReprovacao'] = np.where(
-                df_pdm_reprovacao_anual_periodo_agg['TotalAlunosPeriodo'] > 0,
-                (df_pdm_reprovacao_anual_periodo_agg['N_Reprovados'] / df_pdm_reprovacao_anual_periodo_agg[
-                    'TotalAlunosPeriodo'] * 100), 0).round(2)
-            df_pdm_reprovacao_anual_periodo_agg['AnoPeriodo'] = df_pdm_reprovacao_anual_periodo_agg['Ano'].astype(
-                str) + "." + df_pdm_reprovacao_anual_periodo_agg['Periodo'].astype(str)
+        df_evasao_pdm_periodo = df_desempenho_completo_pdm[
+            df_desempenho_completo_pdm[COL_SITUACAO_PERIODO].isin(VALORES_EVASAO_ETC)] \
+            .dropna(subset=['CPF', 'Ano', 'Periodo']) \
+            .drop_duplicates(subset=['CPF', 'Ano', 'Periodo', 'Modalidade', 'StatusPDM']) \
+            .groupby(['Ano', 'Periodo', 'Modalidade', 'StatusPDM']) \
+            .size().reset_index(name='N_EvasaoDesligamento')
 
-            df_pdm_dependencia_anual_periodo_agg = pd.merge(df_total_situacao_periodo, df_depend_pdm_periodo,
-                                                            on=['Ano', 'Periodo', 'Modalidade', 'StatusPDM'],
-                                                            how='left').fillna(0)
-            if 'N_Dependencia' not in df_pdm_dependencia_anual_periodo_agg.columns:
-                df_pdm_dependencia_anual_periodo_agg['N_Dependencia'] = 0
+        if not df_total_situacao_periodo.empty:
+            if not df_reprov_pdm_periodo.empty:
+                df_pdm_reprovacao_anual_periodo_agg = pd.merge(df_total_situacao_periodo, df_reprov_pdm_periodo,
+                                                               on=['Ano', 'Periodo', 'Modalidade', 'StatusPDM'],
+                                                               how='left')
+                df_pdm_reprovacao_anual_periodo_agg['N_Reprovados'] = df_pdm_reprovacao_anual_periodo_agg[
+                    'N_Reprovados'].fillna(0).astype(int)
+                df_pdm_reprovacao_anual_periodo_agg['TaxaReprovacao'] = np.where(
+                    df_pdm_reprovacao_anual_periodo_agg['TotalAlunosPeriodo'] > 0,
+                    (df_pdm_reprovacao_anual_periodo_agg['N_Reprovados'] / df_pdm_reprovacao_anual_periodo_agg[
+                        'TotalAlunosPeriodo'] * 100), 0).round(2)
+                df_pdm_reprovacao_anual_periodo_agg['AnoPeriodo'] = df_pdm_reprovacao_anual_periodo_agg['Ano'].astype(
+                    str) + "." + df_pdm_reprovacao_anual_periodo_agg['Periodo'].astype(str)
+
+            if not df_depend_pdm_periodo.empty:
+                df_pdm_dependencia_anual_periodo_agg = pd.merge(df_total_situacao_periodo, df_depend_pdm_periodo,
+                                                                on=['Ano', 'Periodo', 'Modalidade', 'StatusPDM'],
+                                                                how='left')
+                df_pdm_dependencia_anual_periodo_agg['N_Dependencia'] = df_pdm_dependencia_anual_periodo_agg[
+                    'N_Dependencia'].fillna(0).astype(int)
                 df_pdm_dependencia_anual_periodo_agg['TaxaDependencia'] = np.where(
                     df_pdm_dependencia_anual_periodo_agg['TotalAlunosPeriodo'] > 0,
                     (df_pdm_dependencia_anual_periodo_agg['N_Dependencia'] / df_pdm_dependencia_anual_periodo_agg[
@@ -529,10 +636,26 @@ if not df_desempenho_completo_pdm.empty:
                 df_pdm_dependencia_anual_periodo_agg['AnoPeriodo'] = df_pdm_dependencia_anual_periodo_agg['Ano'].astype(
                     str) + "." + df_pdm_dependencia_anual_periodo_agg['Periodo'].astype(str)
 
+            if not df_evasao_pdm_periodo.empty:
+                df_pdm_evasao_anual_periodo_agg = pd.merge(df_total_situacao_periodo, df_evasao_pdm_periodo,
+                                                           on=['Ano', 'Periodo', 'Modalidade', 'StatusPDM'], how='left')
+                df_pdm_evasao_anual_periodo_agg['N_EvasaoDesligamento'] = df_pdm_evasao_anual_periodo_agg[
+                    'N_EvasaoDesligamento'].fillna(0).astype(int)
+                df_pdm_evasao_anual_periodo_agg['TaxaEvasaoDesligamento'] = np.where(
+                    df_pdm_evasao_anual_periodo_agg['TotalAlunosPeriodo'] > 0,
+                    (df_pdm_evasao_anual_periodo_agg['N_EvasaoDesligamento'] / df_pdm_evasao_anual_periodo_agg[
+                        'TotalAlunosPeriodo'] * 100), 0).round(2)
+                df_pdm_evasao_anual_periodo_agg['AnoPeriodo'] = df_pdm_evasao_anual_periodo_agg['Ano'].astype(
+                    str) + "." + df_pdm_evasao_anual_periodo_agg['Periodo'].astype(str)
+
     if not df_desempenho_completo_pdm.empty and 'FrequenciaAluno' in df_desempenho_completo_pdm.columns and 'Ano' in df_desempenho_completo_pdm.columns:
-        df_pdm_media_freq_anual_agg = df_desempenho_completo_pdm.groupby(['Ano', 'Modalidade', 'StatusPDM'])[
-            'FrequenciaAluno'].mean().reset_index(name='MediaFrequencia')
-        print("Média de Frequência Anual por Status PDM (2018-2024):\n", df_pdm_media_freq_anual_agg.head())
+        df_pdm_media_freq_anual_agg = df_desempenho_completo_pdm.groupby(['Ano', 'Modalidade', 'StatusPDM'],
+                                                                         as_index=False).agg(
+            MediaFrequencia=('FrequenciaAluno', 'mean'),
+            N_Alunos_Freq=('FrequenciaAluno', 'count')
+        )
+        if 'MediaFrequencia' in df_pdm_media_freq_anual_agg.columns:
+            df_pdm_media_freq_anual_agg['MediaFrequencia'] = df_pdm_media_freq_anual_agg['MediaFrequencia'].round(2)
 
 # --- Geração dos Gráficos ---
 print("\nGerando gráficos históricos...")
@@ -556,34 +679,35 @@ if not df_pdm_media_freq_anual_agg.empty:
     print("\nGerando gráficos de Média de Frequência Anual Comparativa PDM (2018-2024)...")
     for mod_pdm_freq in df_pdm_media_freq_anual_agg['Modalidade'].unique():
         plot_pdm_comparativo_anual(df_pdm_media_freq_anual_agg, mod_pdm_freq, 'MediaFrequencia', 'Média de Frequência',
-                                   True, OUTPUT_GRAPH_PATH, x_col='Ano', x_label_text='Ano da Frequência')
-else:
-    print("AVISO: Nenhuma estatística de frequência anual PDM calculada para gerar gráficos.")
+                                   True, OUTPUT_GRAPH_PATH, x_col='Ano', x_label_text='Ano da Frequência',
+                                   numerator_col_map=METRICA_TO_NUMERADOR_MAP)
 
 if not df_pdm_concluidos_anual_agg.empty:
     print("\nGerando gráficos de Contagem de Concluídos Anual Comparativa PDM (2018-2024)...")
     for mod_pdm_conc in df_pdm_concluidos_anual_agg['Modalidade'].unique():
         plot_pdm_comparativo_anual(df_pdm_concluidos_anual_agg, mod_pdm_conc, 'N_Concluidos', 'Nº de Concluídos', False,
-                                   OUTPUT_GRAPH_PATH, x_col='Ano', x_label_text='Ano de Conclusão')
-else:
-    print("AVISO: Nenhuma estatística de concluídos anual PDM calculada para gerar gráficos.")
+                                   OUTPUT_GRAPH_PATH, x_col='Ano', x_label_text='Ano de Conclusão',
+                                   numerator_col_map=METRICA_TO_NUMERADOR_MAP)
 
 if not df_pdm_reprovacao_anual_periodo_agg.empty:
-    print("\nGerando gráficos de Taxa de Reprovação Anual.Periodo Comparativa PDM (2018-2024)...")
+    print("\nGerando gráficos de Taxa de Reprovação por Período Comparativa PDM (2018-2024)...")
     for mod_pdm_rep in df_pdm_reprovacao_anual_periodo_agg['Modalidade'].unique():
         plot_pdm_comparativo_anual(df_pdm_reprovacao_anual_periodo_agg, mod_pdm_rep, 'TaxaReprovacao',
                                    'Taxa de Reprovação', True, OUTPUT_GRAPH_PATH, x_col='AnoPeriodo',
-                                   x_label_text='Ano.Período')
-else:
-    print("AVISO: Nenhuma estatística de reprovação anual.periodo PDM calculada para gerar gráficos.")
+                                   x_label_text='Ano.Período', numerator_col_map=METRICA_TO_NUMERADOR_MAP)
 
 if not df_pdm_dependencia_anual_periodo_agg.empty:
-    print("\nGerando gráficos de Taxa de Dependência Anual.Periodo Comparativa PDM (2018-2024)...")
+    print("\nGerando gráficos de Taxa de Dependência por Período Comparativa PDM (2018-2024)...")
     for mod_pdm_dep in df_pdm_dependencia_anual_periodo_agg['Modalidade'].unique():
         plot_pdm_comparativo_anual(df_pdm_dependencia_anual_periodo_agg, mod_pdm_dep, 'TaxaDependencia',
                                    'Taxa de Dependência', True, OUTPUT_GRAPH_PATH, x_col='AnoPeriodo',
-                                   x_label_text='Ano.Período')
-else:
-    print("AVISO: Nenhuma estatística de dependência anual.periodo PDM calculada para gerar gráficos.")
+                                   x_label_text='Ano.Período', numerator_col_map=METRICA_TO_NUMERADOR_MAP)
+
+if not df_pdm_evasao_anual_periodo_agg.empty:
+    print("\nGerando gráficos de Taxa de Evasão/Desligamento por Período Comparativa PDM (2018-2024)...")
+    for mod_pdm_evasao in df_pdm_evasao_anual_periodo_agg['Modalidade'].unique():
+        plot_pdm_comparativo_anual(df_pdm_evasao_anual_periodo_agg, mod_pdm_evasao, 'TaxaEvasaoDesligamento',
+                                   'Taxa de Evasão/Desligamento', True, OUTPUT_GRAPH_PATH, x_col='AnoPeriodo',
+                                   x_label_text='Ano.Período', numerator_col_map=METRICA_TO_NUMERADOR_MAP)
 
 print("\nProcessamento concluído! Gráficos salvos em:", OUTPUT_GRAPH_PATH)
